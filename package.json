@@ -65,7 +65,8 @@
           ]
         }
       ],
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "artifactName": "Lumina-Fotos-${version}-portable-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -87,9 +88,6 @@
         "name": "Imagem",
         "role": "Viewer"
       }
-    ],
-    "zip": {
-      "artifactName": "Lumina-Fotos-${version}-portable.${ext}"
-    }
+    ]
   }
 }
