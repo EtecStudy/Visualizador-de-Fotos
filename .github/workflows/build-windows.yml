@@ -1,0 +1,123 @@
+name: Build Windows installer
+
+# Compila o instalador do Windows (NSIS .exe) em um runner windows-latest.
+# Rodar manualmente: Actions → Build Windows installer → Run workflow
+# Ou automaticamente a cada push que altere código/build.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '.gitignore'
+
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Lumina Fotos (Windows x64)
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check and unit tests
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Bundle Electron main/preload
+        run: npm run electron:compile
+
+      - name: Package Windows installer + portable ZIP
+        run: npx electron-builder --win nsis zip --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: List build output
+        shell: pwsh
+        run: Get-ChildItem -Path release | Format-Table Name, Length
+
+      - name: Smoke test (unpacked app boots and renders)
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path release -Recurse -Filter "Lumina Fotos.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Executável não encontrado em release/" }
+          Write-Host "Executando $($exe.FullName)"
+          $process = Start-Process -FilePath $exe.FullName -PassThru
+          # Electron grava o perfil em %APPDATA%; se o processo continuar vivo
+          # depois de 25s, o renderer iniciou sem crash imediato.
+          Start-Sleep -Seconds 25
+          $alive = -not $process.HasExited
+          Write-Host "Processo vivo após 25s: $alive"
+          Get-Content "$env:APPDATA\Lumina Fotos\logs\main.log" -ErrorAction SilentlyContinue
+          Stop-Process -Name "Lumina Fotos" -Force -ErrorAction SilentlyContinue
+          if (-not $alive) { throw "O aplicativo encerrou durante o smoke test" }
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumina-fotos-windows-x64
+          path: |
+            release/*.exe
+            release/*.zip
+            release/*.blockmap
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish release
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          $installer = Get-ChildItem -Path release -Filter "*.exe" | Select-Object -First 1
+          $portable = Get-ChildItem -Path release -Filter "*.zip" | Select-Object -First 1
+          if (-not $installer) { throw "Instalador não encontrado" }
+          $notes = @"
+          Instalador do **Lumina Fotos** para Windows 10/11 (x64), gerado automaticamente a partir do commit ${{ github.sha }}.
+
+          **Opção 1 — Instalador (recomendado)**
+          1. Baixe ``$($installer.Name)``.
+          2. Execute e siga o assistente (dá para escolher a pasta; cria atalhos no Menu Iniciar e na área de trabalho).
+          3. Se o Windows SmartScreen avisar sobre "aplicativo não reconhecido", clique em **Mais informações → Executar assim mesmo** (o build não tem assinatura de código).
+
+          **Opção 2 — Portable (sem instalar)**
+          1. Baixe ``$($(if ($portable) { $portable.Name } else { 'Lumina-Fotos-*-portable.zip' }))``.
+          2. Extraia o ZIP em qualquer pasta.
+          3. Rode ``Lumina Fotos.exe`` de dentro da pasta extraída.
+
+          O upscale por IA funciona **offline**: os pesos do modelo já vêm no pacote.
+          "@
+          $existing = gh release view $tag --json url 2>$null
+          $assets = @($installer.FullName)
+          if ($portable) { $assets += $portable.FullName }
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @assets --clobber
+          } else {
+            gh release create $tag @assets --title "Lumina Fotos $version" --notes $notes --target "${{ github.sha }}"
+          }
