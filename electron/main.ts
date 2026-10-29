@@ -210,7 +210,7 @@ function createWindow(): BrowserWindow {
     show: false,
     backgroundColor: '#0a0b0d',
     title: 'Lumina Fotos',
-    icon: path.join(appRoot, 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
+    icon: path.join(appRoot, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,

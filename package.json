@@ -34,7 +34,7 @@
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^5.0.2",
-    "electron": "^38.0.0",
+    "electron": "38.8.6",
     "electron-builder": "^26.0.12",
     "esbuild": "^0.25.9",
     "typescript": "^5.9.2",
@@ -47,11 +47,13 @@
     "copyright": "Copyright © 2026 Lumina",
     "directories": {
       "output": "release",
-      "buildResources": "build"
+      "buildResources": "assets"
     },
     "files": [
       "dist/**/*",
       "electron-dist/**/*",
+      "assets/icon.ico",
+      "assets/icon.png",
       "package.json"
     ],
     "win": {
@@ -63,7 +65,7 @@
           ]
         }
       ],
-      "icon": "build/icon.ico",
+      "icon": "assets/icon.ico",
       "artifactName": "Lumina-Fotos-${version}-Setup.${ext}"
     },
     "nsis": {
@@ -76,7 +78,12 @@
     },
     "fileAssociations": [
       {
-        "ext": ["jpg", "jpeg", "png", "webp"],
+        "ext": [
+          "jpg",
+          "jpeg",
+          "png",
+          "webp"
+        ],
         "name": "Imagem",
         "role": "Viewer"
       }
