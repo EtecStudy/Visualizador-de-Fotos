@@ -101,6 +101,23 @@ npm run preview      # serve o build
 
 ---
 
+## Baixar o aplicativo pronto (Windows)
+
+Toda vez que o código é atualizado, o GitHub Actions compila e publica os binários na página de **Releases**:
+
+**https://github.com/EtecStudy/Visualizador-de-Fotos/releases/latest**
+
+| Arquivo | O que é | Como usar |
+| --- | --- | --- |
+| `Lumina-Fotos-1.0.0-Setup.exe` | Instalador (NSIS, x64) | Execute e siga o assistente. Cria atalhos no Menu Iniciar e na área de trabalho e associa `.jpg/.jpeg/.png/.webp`. |
+| `Lumina-Fotos-1.0.0-portable-x64.zip` | Versão portable | Extraia o ZIP em qualquer pasta e rode `Lumina Fotos.exe` — não instala nada. |
+
+> O build **não é assinado digitalmente**. Na primeira execução o Windows pode mostrar o aviso do SmartScreen: clique em **Mais informações → Executar assim mesmo**.
+>
+> O upscale por IA funciona **offline**: os pesos do modelo já vêm dentro do pacote (nada é baixado nem enviado para a internet depois de instalado).
+
+Também é possível baixar o artefato de cada execução em **Actions → Build Windows installer → Artifacts**.
+
 ## Como gerar o instalador do Windows
 
 ```bash

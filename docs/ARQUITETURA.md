@@ -160,9 +160,26 @@ FileService (core/types.ts)
 
 ---
 
-## 10. Processo principal do Electron
+## 10. Empacotamento e distribuição (CI)
+
+O instalador é gerado no GitHub Actions (`.github/workflows/build-windows.yml`) em um runner `windows-latest`:
+
+1. `npm ci` → `npm run typecheck` → `npm test` (falha o build se qualquer teste quebrar);
+2. `npm run build` (renderer) e `electron:compile` (main/preload em `electron-dist/`);
+3. `electron-builder --win nsis zip --x64` → instalador NSIS + ZIP portable;
+4. **Smoke test**: o executável desempacotado é aberto no runner e deve continuar vivo por 25 s (detecta app que abre em branco/crash imediato);
+5. artefatos publicados no run e o `.exe`/`.zip` anexados à Release `v<versão>`.
+
+Configuração relevante em `package.json → build`:
+- `directories.buildResources: assets` (ícone `assets/icon.ico` gerado a partir de `assets/icon.png`);
+- `files`: `dist/`, `electron-dist/`, ícones e `package.json` — os pesos do modelo entram via `dist/models` (copiados de `public/`);
+- `nsis.artifactName` para o instalador e `win.artifactName` para o zip;
+- `fileAssociations` registra o app como visualizador de imagens no Windows.
+
+## 11. Processo principal do Electron
 
 - `protocol.registerSchemesAsPrivileged(['lumina'])` + `protocol.handle` servindo `dist/` com verificação de path traversal.
+- **Contingência**: se o `lumina://` falhar em alguma máquina (`did-fail-load`), o app sobe um servidor estático em `127.0.0.1:<porta livre>` (`startFallbackServer`) e recarrega — evitando janela em branco; o servidor é fechado em `before-quit`.
 - `registerIpc()`: `dialog:openImages`, `file:saveImage`, `shell:reveal`, `window:toggleFullscreen`, `app:version`, `files:pending`.
 - **Instância única** (`requestSingleInstanceLock`) e `second-instance` → quando o usuário abre uma imagem por "Abrir com", a janela existente recebe o arquivo (`files:opened`).
 - Menu da aplicação envia `menu:open|save|undo|redo|shortcuts` para o renderer.
@@ -170,13 +187,13 @@ FileService (core/types.ts)
 
 ---
 
-## 11. Estilos
+## 12. Estilos
 
 `src/styles/` com design tokens (`tokens.css`) e camadas separadas (`base`, `layout`, `components`, `editor`, `dialogs`, `responsive`). Tema escuro focado em fotografia: fundo quase preto, superfícies em camadas, acento âmbar (`#f5a524`) e tipografia Segoe UI Variable no Windows.
 
 ---
 
-## 12. Testes e CI local
+## 13. Testes e CI local
 
 | Arquivo | O que garante |
 | --- | --- |
@@ -195,7 +212,7 @@ Para adicionar testes de UI, o caminho natural é Playwright (o app roda em `npm
 
 ---
 
-## 13. Como adicionar uma ferramenta nova (checklist)
+## 14. Como adicionar uma ferramenta nova (checklist)
 
 1. **Tipo**: adicione o campo em `EditState` (`core/types.ts`).
 2. **Default/normalização**: `editing/defaults.ts` (`createDefaultEdit`, `normalizeEdit`, `isEditDirty`, `describeEdit`).
@@ -208,11 +225,11 @@ Para adicionar testes de UI, o caminho natural é Playwright (o app roda em `npm
 
 ---
 
-## 14. Limitações conhecidas e próximos passos
+## 15. Limitações conhecidas e próximos passos
 
 - **Upscale em CPU** é lento em imagens grandes (o WebGL acelera muito). Roadmap: WebGPU + seleção automática de backend, indicador de backend ativo.
 - **Modelos extras**: Real-ESRGAN para fotos reais, denoise (waifu2x-like), face restore — basta implementar `UpscaleEngine` e baixar o modelo para `public/models/` em um gerenciador de modelos.
 - **Batch**: aplicar edição/upscale a várias fotos de uma vez (a store já mantém `editsByPhoto` por foto).
 - **LUTs/curvas**: novo passo no pipeline de cor.
 - **HEIC/TIFF**: depende de decodificador adicional (WASM).
-- **Instalador**: gerar assinatura de código para evitar avisos do SmartScreen.
+- **Instalador sem assinatura**: o SmartScreen exibe um aviso na primeira execução; a solução definitiva é assinar o binário com um certificado de code signing (configurável por `CSC_LINK`/`CSC_KEY_PASSWORD` no workflow).
