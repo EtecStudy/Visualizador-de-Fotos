@@ -51,8 +51,8 @@ jobs:
       - name: Bundle Electron main/preload
         run: npm run electron:compile
 
-      - name: Package Windows installer
-        run: npx electron-builder --win nsis --x64 --publish never
+      - name: Package Windows installer + portable ZIP
+        run: npx electron-builder --win nsis zip --x64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
@@ -82,6 +82,7 @@ jobs:
           name: lumina-fotos-windows-x64
           path: |
             release/*.exe
+            release/*.zip
             release/*.blockmap
           if-no-files-found: error
           retention-days: 30
@@ -95,20 +96,28 @@ jobs:
           $version = (Get-Content package.json | ConvertFrom-Json).version
           $tag = "v$version"
           $installer = Get-ChildItem -Path release -Filter "*.exe" | Select-Object -First 1
+          $portable = Get-ChildItem -Path release -Filter "*.zip" | Select-Object -First 1
           if (-not $installer) { throw "Instalador não encontrado" }
           $notes = @"
           Instalador do **Lumina Fotos** para Windows 10/11 (x64), gerado automaticamente a partir do commit ${{ github.sha }}.
 
-          **Como instalar**
-          1. Baixe ``$($installer.Name)`` abaixo.
-          2. Execute o arquivo e siga o assistente (é possível escolher a pasta).
+          **Opção 1 — Instalador (recomendado)**
+          1. Baixe ``$($installer.Name)``.
+          2. Execute e siga o assistente (dá para escolher a pasta; cria atalhos no Menu Iniciar e na área de trabalho).
           3. Se o Windows SmartScreen avisar sobre "aplicativo não reconhecido", clique em **Mais informações → Executar assim mesmo** (o build não tem assinatura de código).
 
-          O upscale por IA funciona **offline**: os pesos do modelo já vêm no instalador.
+          **Opção 2 — Portable (sem instalar)**
+          1. Baixe ``$($(if ($portable) { $portable.Name } else { 'Lumina-Fotos-*-portable.zip' }))``.
+          2. Extraia o ZIP em qualquer pasta.
+          3. Rode ``Lumina Fotos.exe`` de dentro da pasta extraída.
+
+          O upscale por IA funciona **offline**: os pesos do modelo já vêm no pacote.
           "@
           $existing = gh release view $tag --json url 2>$null
+          $assets = @($installer.FullName)
+          if ($portable) { $assets += $portable.FullName }
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $installer.FullName --clobber
+            gh release upload $tag @assets --clobber
           } else {
-            gh release create $tag $installer.FullName --title "Lumina Fotos $version" --notes $notes --target "${{ github.sha }}"
+            gh release create $tag @assets --title "Lumina Fotos $version" --notes $notes --target "${{ github.sha }}"
           }
