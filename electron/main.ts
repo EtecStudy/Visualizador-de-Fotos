@@ -12,7 +12,8 @@ import {
 } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
 import { pathToFileURL } from 'node:url';
 
 const DEV_URL = process.env.LUMINA_DEV_URL;
@@ -59,6 +60,69 @@ async function readImageFiles(paths: string[]) {
     }
   }
   return entries;
+}
+
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.bin': 'application/octet-stream',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.bmp': 'image/bmp',
+  '.avif': 'image/avif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+};
+
+let fallbackServer: Server | null = null;
+
+/**
+ * Last-resort static server on 127.0.0.1, used only if the custom
+ * `lumina://` protocol fails to load. Keeps the app usable instead of
+ * showing a blank window on exotic Windows/antivirus configurations.
+ */
+function startFallbackServer(): Promise<string> {
+  if (fallbackServer) {
+    const address = fallbackServer.address();
+    const port = typeof address === 'object' && address ? address.port : 0;
+    return Promise.resolve(`http://127.0.0.1:${port}/index.html`);
+  }
+  return new Promise((resolve, reject) => {
+    const server = createServer(async (request, response) => {
+      try {
+        const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+        const relative = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
+        const target = path.normalize(path.join(distDir, relative));
+        if (!target.startsWith(distDir) || !existsSync(target)) {
+          response.writeHead(404).end('Não encontrado');
+          return;
+        }
+        response.writeHead(200, {
+          'Content-Type': MIME_TYPES[path.extname(target).toLowerCase()] ?? 'application/octet-stream',
+          'Access-Control-Allow-Origin': '*',
+          'Cross-Origin-Opener-Policy': 'same-origin',
+          'Cross-Origin-Embedder-Policy': 'credentialless',
+        });
+        createReadStream(target).pipe(response);
+      } catch {
+        response.writeHead(500).end('Erro interno');
+      }
+    });
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      fallbackServer = server;
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      resolve(`http://127.0.0.1:${port}/index.html`);
+    });
+  });
 }
 
 function registerProtocol(): void {
@@ -233,8 +297,30 @@ function createWindow(): BrowserWindow {
     event.preventDefault();
   });
 
-  if (isDev) void window.loadURL(DEV_URL!);
-  else void window.loadURL('lumina://app/index.html');
+  if (isDev) {
+    void window.loadURL(DEV_URL!);
+  } else {
+    let recovered = false;
+    window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+      // -3 = ERR_ABORTED (navegação cancelada de propósito, ignoramos)
+      if (recovered || errorCode === -3 || !validatedURL.startsWith('lumina://')) return;
+      recovered = true;
+      console.warn('[lumina] falha ao carregar lumina://:', errorCode, errorDescription);
+      void startFallbackServer()
+        .then((url) => {
+          console.warn('[lumina] usando servidor local de contingência em', url);
+          return window.loadURL(url);
+        })
+        .catch((error) => {
+          console.error('[lumina] não foi possível iniciar o servidor de contingência:', error);
+          void dialog.showErrorBox(
+            'Lumina não conseguiu iniciar',
+            'Feche o aplicativo e tente novamente. Se o problema persistir, reinstale o Lumina Fotos.',
+          );
+        });
+    });
+    void window.loadURL('lumina://app/index.html');
+  }
 
   mainWindow = window;
   window.on('closed', () => {
@@ -282,6 +368,11 @@ if (!hasLock) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
+  });
+
+  app.on('before-quit', () => {
+    fallbackServer?.close();
+    fallbackServer = null;
   });
 
   app.on('window-all-closed', () => {
